@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "hesai-pcap-parser-rs",
+    "velo-pcap-parser-rs",
+]

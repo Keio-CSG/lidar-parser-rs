@@ -1,0 +1,12 @@
+[package]
+name = "velo-pcap-parser-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+getopts = "0.2.21"
+hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git" }
+pcap-parser = "0.14.1"
+anyhow = "1.0.75"
