@@ -58,5 +58,5 @@ impl FrameWriter for CsvWriter {
         }
     }
 
-    fn write_attribute(&mut self, _laser_num: u32, _motor_speed: u32, _return_mode: u32, _manufacturer: &str, _model: &str) { }
+    fn write_attribute(&mut self, _laser_num: u32, _frequency: f32, _return_mode: u32, _manufacturer: &str, _model: &str) { }
 }

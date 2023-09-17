@@ -124,7 +124,8 @@ fn write_header(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
         _ => 0,
     };
     let motor_speed = ((tail[12] as u32) << 8) + (tail[11] as u32);
-    writer.write_attribute(laser_num, motor_speed, return_mode, "Hesai", "XT32");
+    let frequency = motor_speed as f32 / 60.0;
+    writer.write_attribute(laser_num, frequency, return_mode, "Hesai", "XT32");
 }
 
 fn parse_packet_body(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {

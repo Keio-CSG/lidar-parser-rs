@@ -40,6 +40,12 @@ impl HdfWriter {
             .create(name).unwrap();
     }
 
+    fn add_f32_attribute(&self, name: &str, value: f32) {
+        self.file.new_attr_builder()
+            .with_data(&[value])
+            .create(name).unwrap();
+    }
+
     fn write_to_file(&mut self) {
         let points_num = self.buffer.len();
 
@@ -74,9 +80,9 @@ impl FrameWriter for HdfWriter {
         }
     }
 
-    fn write_attribute(&mut self, laser_num: u32, motor_speed: u32, return_mode: u32, manufacturer: &str, model: &str) {
+    fn write_attribute(&mut self, laser_num: u32, frequency: f32, return_mode: u32, manufacturer: &str, model: &str) {
         self.add_u32_attribute("laser number", laser_num);
-        self.add_u32_attribute("motor speed", motor_speed);
+        self.add_f32_attribute("frequency", frequency);
         self.add_u32_attribute("return mode", return_mode);
         self.add_str_attribute("manufacturer", manufacturer);
         self.add_str_attribute("model", model);

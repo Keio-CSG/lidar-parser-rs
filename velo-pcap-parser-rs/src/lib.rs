@@ -128,7 +128,7 @@ fn write_header(info: &PcapInfo, writer: &mut Box<dyn FrameWriter>) {
         VeloProduct::Vlp16 => "VLP-16",
         VeloProduct::Vlp32c => "VLP-32C",
     };
-    writer.write_attribute(laser_num, info.motor_speed as u32, return_mode, manufacturer, model);
+    writer.write_attribute(laser_num, info.frequency, return_mode, manufacturer, model);
 }
 
 fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
@@ -137,7 +137,7 @@ fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut Box<dyn F
 
     let blocks = &packet_body[0..1200];
 
-    let azimuth_per_scan = (info.motor_speed as f32 * 36000.0 / 60.0 / 1000000.0 * 55.296).round() as u16;
+    let azimuth_per_scan = (info.frequency * 36000.0 / 1000000.0 * 55.296).round() as u16;
 
     match info.product {
         VeloProduct::Vlp16 => {
@@ -308,8 +308,9 @@ enum VeloProduct {
 struct PcapInfo {
     return_mode: ReturnMode,
     product: VeloProduct,
+    #[allow(dead_code)]
     num_frames: u16,
-    motor_speed: u16, // rpm
+    frequency: f32, // Hz
 }
 
 fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
@@ -390,12 +391,12 @@ fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
         ReturnMode::Dual => 55.296 * 11.0,
         _ => 55.296 * 22.0,
     };
-    let motor_speed = (azimuth_diff as f32 / elapsed_time_us * 10000.0 / 6.0) as u16;
+    let frequency = azimuth_diff as f32 / elapsed_time_us * 1000.0 / 36.0;
 
     Ok(PcapInfo {
         return_mode,
         product,
         num_frames,
-        motor_speed,
+        frequency,
     })
 }
