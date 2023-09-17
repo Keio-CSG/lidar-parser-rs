@@ -120,9 +120,8 @@ name = "hesai-pcap-parser-rs"
 version = "0.1.0"
 dependencies = [
  "getopts",
- "hdf5",
- "ndarray",
  "pcap-parser",
+ "writer-common",
 ]
 
 [[package]]
@@ -431,8 +430,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "getopts",
- "hdf5",
  "pcap-parser",
+ "writer-common",
 ]
 
 [[package]]
@@ -516,4 +515,13 @@ dependencies = [
  "cfg-if",
  "serde",
  "windows-sys",
+]
+
+[[package]]
+name = "writer-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hdf5",
+ "pcap-parser",
 ]

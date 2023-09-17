@@ -1,21 +1,12 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use velopoint::VeloPoint;
+use writer_common::{framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, framesplitter::AzimuthSplitter};
 use std::fs::File;
 use std::path::Path;
 use std::process::exit;
 use std::time::Instant;
 use getopts::Options;
 use anyhow::{Result, Error, ensure, anyhow};
-
-use crate::csvwriter::CsvWriter;
-use crate::framewriter::FrameWriter;
-use crate::hdfwriter::HdfWriter;
-
-mod csvwriter;
-mod hdfwriter;
-mod velopoint;
-mod framewriter;
 
 // TODO: dual returnでreturnが1つしかない場合に対応する
 
@@ -24,9 +15,10 @@ pub fn run(args: Args) {
 
     let dir = format!("{}/", stem.to_str().unwrap());
 
+    let splitter = AzimuthSplitter::new();
     let mut writer: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
+        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
     };
 
     let time_start = Instant::now();
@@ -207,7 +199,7 @@ fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, t
 
                 let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
                 let reflectivity = channel_data[2];
-                let point = build_velo_point(distance as f32, precise_azimuth, channel as u16, (precise_timestamp * 1000.0) as u32, reflectivity as u16, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
+                let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u32, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
                 writer.write_row(point);
             }
         }
@@ -266,7 +258,7 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
 
             let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
             let reflectivity = channel_data[2];
-            let point = build_velo_point(distance as f32, precise_azimuth, channel as u16, (precise_timestamp * 1000.0) as u32, reflectivity as u16, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
+            let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u32, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
             writer.write_row(point);
         }
     }
@@ -275,7 +267,7 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
 
 
 const ROTATION_RESOLUTION: f32 = 0.01;
-fn build_velo_point(distance: f32, azimuth: u16, channel: u16, timestamp_ns: u32, reflectivity: u16, laser_angles: &[f32], distance_resolution: f32) -> VeloPoint {
+fn build_velo_point(distance: f32, azimuth: u16, channel: u8, timestamp_ns: u32, intensity: u8, laser_angles: &[f32], distance_resolution: f32) -> VeloPoint {
     let distance_m = distance as f32 * distance_resolution;
     let vertical_angle = laser_angles[channel as usize];
     let omega = vertical_angle.to_radians();
@@ -286,12 +278,12 @@ fn build_velo_point(distance: f32, azimuth: u16, channel: u16, timestamp_ns: u32
     let z = distance_m * omega.sin();
 
     VeloPoint {
-        reflectivity: reflectivity as u8,
-        channel: channel as u8,
+        intensity,
+        channel,
         azimuth,
         distance_m,
-        timestamp: timestamp_ns,
-        vertical_angle,
+        timestamp: timestamp_ns as u64,
+        altitude: (vertical_angle * 100.0) as i16,
         x,
         y,
         z,

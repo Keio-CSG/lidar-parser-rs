@@ -1,21 +1,16 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use velopoint::VeloPoint;
+use writer_common::csvwriter::CsvWriter;
+use writer_common::framesplitter::AzimuthSplitter;
+use writer_common::framewriter::FrameWriter;
+use writer_common::hdfwriter::HdfWriter;
+use writer_common::velopoint::VeloPoint;
 use std::fs::File;
 use std::f32::consts::PI;
 use std::path::Path;
 use std::process::exit;
 use std::time::Instant;
 use getopts::Options;
-
-use crate::csvwriter::CsvWriter;
-use crate::framewriter::FrameWriter;
-use crate::hdfwriter::HdfWriter;
-
-mod csvwriter;
-mod hdfwriter;
-mod velopoint;
-mod framewriter;
 
 pub fn run(args: Args) {
     let stem = Path::new(&args.input).file_stem().unwrap();
@@ -27,9 +22,10 @@ pub fn run(args: Args) {
 
     let dir = format!("{}/", stem.to_str().unwrap());
 
+    let splitter = AzimuthSplitter::new();
     let mut writer: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
+        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
     };
 
     let mut header_written = false;
@@ -141,25 +137,25 @@ fn parse_packet_body(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
     let tail = &packet_body[1052..1076];
     let return_mode = tail[10];
     let date_time = &tail[13..19];
-    let timestamp = ((tail[22] as u32) << 24) 
+    let timestamp_us = ((tail[22] as u32) << 24) 
                         + ((tail[21] as u32) << 16) 
                         + ((tail[20] as u32) << 8) 
                         + ((tail[19] as u32));
 
     for block_index in 0..block_num {
-        let block_timestamp = calc_block_timestamp(date_time, timestamp, block_index+1, return_mode);
+        let block_timestamp_ns = calc_block_timestamp_ns(date_time, timestamp_us, block_index+1, return_mode);
         let block_start = (block_index*130) as usize;
-        parse_block(&body[block_start..block_start+130], block_timestamp, writer);
+        parse_block(&body[block_start..block_start+130], block_timestamp_ns, writer);
     }
 }
 
-fn calc_block_timestamp(date_time: &[u8], timestamp: u32, block_id: u32, return_mode: u8) -> u32 {
-    let t0 = ((date_time[4] as u64) * 60 * 1000000 + (date_time[5] as u64) * 1000000 + timestamp as u64) as f32;
+fn calc_block_timestamp_ns(date_time: &[u8], timestamp_us: u32, block_id: u32, return_mode: u8) -> u64 {
+    let t0 = (date_time[4] as u64) * 60 * 1000000000 + (date_time[5] as u64) * 1000000000 + timestamp_us as u64 * 1000;
     if return_mode == 0x37 || return_mode == 0x38 {
-        (t0 + 3.28 - 50.0 * (8.0 - block_id as f32)) as u32
+        t0 + 3280 - 50000 * (8 - block_id as u64)
     }
     else {
-        (t0 + 3.28 - (50 * ((8 - block_id)/2)) as f32) as u32
+        t0 + 3280 - (50000 * ((8 - block_id as u64)/2))
     }
 }
 
@@ -176,10 +172,10 @@ fn calc_polar_coordinate(azimuth_deg: f32, v_angle_deg: f32, distance_m: f32) ->
     (x,y,z)
 }
 
-fn parse_block(packet_block: &[u8], block_timestamp: u32, writer: &mut Box<dyn FrameWriter>) {
+fn parse_block(packet_block: &[u8], block_timestamp_ns: u64, writer: &mut Box<dyn FrameWriter>) {
     let azimuth = ((packet_block[1] as u32) << 8) + (packet_block[0] as u32);
     for channel in 0..32 as u8 {
-        let channel_timestamp = (block_timestamp as f32 + 1.512 * channel as f32 + 0.28) as u32;
+        let channel_timestamp_ns = block_timestamp_ns + 1512 * channel as u64 + 280;
         let v_angle = channel_to_v_angle(channel as i32);
         let channel_start = (2+channel*4) as usize;
         let channel_data = &packet_block[channel_start..channel_start+4];
@@ -191,12 +187,12 @@ fn parse_block(packet_block: &[u8], block_timestamp: u32, writer: &mut Box<dyn F
             distance as f32 * 4.0 / 1000.0);
 
         writer.write_row(VeloPoint { 
-            reflectivity, 
+            intensity: reflectivity, 
             channel, 
             azimuth: azimuth as u16, 
             distance_m: distance as f32 * 4.0 / 1000.0,
-            timestamp: channel_timestamp, 
-            vertical_angle: v_angle as f32, 
+            timestamp: channel_timestamp_ns, 
+            altitude: (v_angle * 100) as i16, 
             x, y, z })
     }
 }
