@@ -81,20 +81,20 @@ pub struct Args {
     compression: bool,
 }
 
-pub fn parse_args(args: &Vec<String>) -> Args {
+pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
     let mut opts = Options::new();
     opts.optopt("o", "output", "output type", "csv|hdf");
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("c", "compression", "enable compression");
     let matches = opts.parse(args).unwrap();
     if matches.opt_present("h") {
-        print!("{}", opts.usage("Usage: veloconv [options] <input>"));
+        print_help(opts, command_prefix);
         exit(0);
     }
     let input = if !matches.free.is_empty() {
         matches.free[0].clone()
     } else {
-        print!("{}", opts.usage("Usage: veloconv [options] <input>"));
+        print_help(opts, command_prefix);
         exit(0);
     };
     let out_type = if matches.opt_present("o") {
@@ -102,7 +102,7 @@ pub fn parse_args(args: &Vec<String>) -> Args {
             "csv" => OutType::Csv,
             "hdf" => OutType::Hdf,
             _ => {
-                print!("{}", opts.usage("Usage: veloconv [options] <input>"));
+                print_help(opts, command_prefix);
                 exit(0);
             }
         }
@@ -111,6 +111,10 @@ pub fn parse_args(args: &Vec<String>) -> Args {
     };
     let compression = matches.opt_present("c");
     Args { input, out_type, compression }
+}
+
+fn print_help(opts: Options, command_prefix: &str) {
+    print!("{}", opts.usage(format!("Usage: {} [options] <input>", command_prefix).as_str()));
 }
 
 fn write_header(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
