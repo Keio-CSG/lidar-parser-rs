@@ -1,0 +1,13 @@
+[package]
+name = "livox-parser-rs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+getopts = "0.2.21"
+pcap-parser = "0.14.0"
+anyhow = "1.0.75"
+writer-common = { path = "../writer-common" }
+byteorder = "1.4.3"
