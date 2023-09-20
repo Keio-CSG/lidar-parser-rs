@@ -1,6 +1,6 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use writer_common::{framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, framesplitter::AzimuthSplitter};
+use writer_common::{framewriter::{FrameWriter, CsvWriter, HdfWriter}, velopoint::VeloPoint, azimuthsplitwriter::AzimuthSplitWriter};
 use std::fs::File;
 use std::path::Path;
 use std::process::exit;
@@ -15,11 +15,11 @@ pub fn run(args: Args) {
 
     let dir = format!("{}/", stem.to_str().unwrap());
 
-    let splitter = AzimuthSplitter::new();
-    let mut writer: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
+    let writer_internal: Box<dyn FrameWriter> = match args.out_type {
+        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
+        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
     };
+    let mut writer = Box::new(AzimuthSplitWriter::new(writer_internal));
 
     let time_start = Instant::now();
     let pcap_info = parse_packet_info(&args.input).unwrap();
@@ -117,7 +117,7 @@ fn print_help(opts: Options, command_prefix: &str) {
     print!("{}", opts.usage(format!("Usage: {} [options] <input>", command_prefix).as_str()));
 }
 
-fn write_header(info: &PcapInfo, writer: &mut Box<dyn FrameWriter>) {
+fn write_header(info: &PcapInfo, writer: &mut AzimuthSplitWriter) {
     let laser_num = match info.product {
         VeloProduct::Vlp16 => 16,
         VeloProduct::Vlp32c => 32,
@@ -135,7 +135,7 @@ fn write_header(info: &PcapInfo, writer: &mut Box<dyn FrameWriter>) {
     writer.write_attribute(laser_num, info.frequency, return_mode, manufacturer, model);
 }
 
-fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     ensure!(packet_body.len() == 1206, "packet size is not 1206");
     let timestamp = ((packet_body[1200] as u32) << 24) + ((packet_body[1201] as u32) << 16) + ((packet_body[1202] as u32) << 8) + packet_body[1203] as u32;
 
@@ -159,7 +159,7 @@ const VLP16_LASER_ANGLES: [f32; 16] = [
     -15.0, 1.0, -13.0, 3.0, -11.0, 5.0, -9.0, 7.0, -7.0, 9.0, -5.0, 11.0, -3.0, 13.0, -1.0, 15.0,
 ];
 const VLP16_DISTANCE_RESOLUTION: f32 = 0.002;
-fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -224,7 +224,7 @@ const VLP32C_AZIMUTH_OFFSETS: [i32; 32] = [
     140, -140,  140, -420,  420, -140,  140, -140
 ];
 const VLP32C_DISTANCE_RESOLUTION: f32 = 0.004;
-fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes

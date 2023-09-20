@@ -1,24 +1,22 @@
 use std::{fs::{OpenOptions, self}, path::Path};
 use std::io::{BufWriter, Write};
 
-use crate::{velopoint::VeloPoint, framewriter::FrameWriter, framesplitter::FrameSplitter};
+use crate::{velopoint::VeloPoint, framewriter::FrameWriter};
 
 pub struct CsvWriter {
     dir: String,
     file_prefix: String,
-    frame_splitter: Box<dyn FrameSplitter>,
     file_index: u32,
     buffer: Vec<VeloPoint>,
 }
 
 impl CsvWriter {
-    pub fn create(dir: String, file_prefix: String, splitter: Box<dyn FrameSplitter>) -> CsvWriter {
+    pub fn create(dir: String, file_prefix: String) -> CsvWriter {
         fs::create_dir(dir.to_string()).unwrap();
         CsvWriter { 
             dir, 
             file_prefix, 
             file_index: 0,
-            frame_splitter: splitter,
             buffer: Vec::new(), 
         }
     }
@@ -42,16 +40,10 @@ impl CsvWriter {
 
 impl FrameWriter for CsvWriter {
     fn write_row(&mut self, row: VeloPoint) {
-        if self.frame_splitter.read(&row) {
-            if self.buffer.len() > 0 {
-                self.write_to_file();
-                self.buffer.clear();
-            }
-        }
         self.buffer.push(row);
     }
 
-    fn finalize(&mut self) { 
+    fn split_frame(&mut self) { 
         if self.buffer.len() > 0 {
             self.write_to_file();
             self.buffer.clear();
