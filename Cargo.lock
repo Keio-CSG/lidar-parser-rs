@@ -174,6 +174,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ls-pcap-parser-rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "getopts",
+ "pcap-parser",
+ "writer-common",
+]
+
+[[package]]
 name = "matrixmultiply"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
