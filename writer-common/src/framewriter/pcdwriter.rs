@@ -2,24 +2,22 @@ use std::fs;
 
 use pcd_rs::{DynRecord, ValueKind, DynWriter, WriterInit, Schema, Field};
 
-use crate::{velopoint::VeloPoint, framewriter::FrameWriter, framesplitter::FrameSplitter};
+use crate::{velopoint::VeloPoint, framewriter::FrameWriter};
 
 pub struct PcdWriter {
     dir: String,
     file_prefix: String,
-    frame_splitter: Box<dyn FrameSplitter>,
     file_index: u32,
     buffer: Vec<DynRecord>,
 }
 
 impl PcdWriter {
-    pub fn create(dir: String, file_prefix: String, splitter: Box<dyn FrameSplitter>) -> PcdWriter {
+    pub fn create(dir: String, file_prefix: String) -> PcdWriter {
         fs::create_dir(dir.to_string()).unwrap();
         PcdWriter { 
             dir, 
             file_prefix, 
             file_index: 0,
-            frame_splitter: splitter,
             buffer: Vec::new(), 
         }
     }
@@ -54,12 +52,6 @@ impl PcdWriter {
 
 impl FrameWriter for PcdWriter {
     fn write_row(&mut self, row: VeloPoint) {
-        if self.frame_splitter.read(&row) {
-            if self.buffer.len() > 0 {
-                self.write_to_file();
-                self.buffer.clear();
-            }
-        }
         self.buffer.push(DynRecord(vec![
             Field::F32(vec![row.x]),
             Field::F32(vec![row.y]),
@@ -73,7 +65,7 @@ impl FrameWriter for PcdWriter {
         ]));
     }
 
-    fn finalize(&mut self) { 
+    fn split_frame(&mut self) { 
         if self.buffer.len() > 0 {
             self.write_to_file();
             self.buffer.clear();

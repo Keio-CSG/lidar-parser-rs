@@ -1,8 +1,8 @@
 use std::{path::Path, fs::File, io::{Read, BufReader, BufRead, Seek, Cursor}, time::Instant};
 
-use writer_common::{framesplitter::TimeSplitter, framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, pcdwriter::PcdWriter};
 use anyhow::{Result, Error, ensure, anyhow, Ok};
 use byteorder::{LittleEndian, ReadBytesExt, ByteOrder};
+use writer_common::{framewriter::{FrameWriter, CsvWriter, HdfWriter, PcdWriter}, timesplitwriter::TimeSplitWriter, velopoint::VeloPoint};
 
 use crate::parseargs::{Args, OutType};
 
@@ -11,14 +11,12 @@ pub fn run(args: Args) {
 
     let dir = format!("{}/", stem.to_str().unwrap());
 
-    let splitter = TimeSplitter::new(
-        args.frame_time_ms * 1000 * 1000,
-    );
-    let mut writer: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
-        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
+    let writer_internal: Box<dyn FrameWriter> = match args.out_type {
+        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
+        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string())),
     };
+    let mut writer = TimeSplitWriter::new(args.frame_time_ms * 1000 * 1000, writer_internal);
 
     let file = File::open(&args.input).unwrap();
     let mut reader = std::io::BufReader::new(file);
@@ -54,7 +52,7 @@ pub fn run(args: Args) {
     println!("file have been processed in {:?}", duration);
 }
 
-fn parse_lvx(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     let mut private_header_block = [0u8; 5];
     reader.read_exact(&mut private_header_block)?;
     let device_count = private_header_block[4];
@@ -98,7 +96,7 @@ fn parse_lvx(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Box<
     Ok(())
 }
 
-fn parse_lvx_frame_body(buffer: &Vec<u8>, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_frame_body(buffer: &Vec<u8>, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     let mut cursor = Cursor::new(buffer);
     loop { // read each package
         if cursor.position() == buffer.len() as u64 {
@@ -144,7 +142,7 @@ fn parse_lvx_frame_body(buffer: &Vec<u8>, writer: &mut Box<dyn FrameWriter>) -> 
 /// - y: int32 (mm)
 /// - z: int32 (mm)
 /// - reflectivity: uint8
-fn parse_lvx_data0_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data0_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..100 {
         let x = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
         let y = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
@@ -177,7 +175,7 @@ fn parse_lvx_data0_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - theta: uint16 (0.01 degree)
 /// - phi: uint16 (0.01 degree)
 /// - reflectivity: uint8
-fn parse_lvx_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..100 {
         let depth = cursor.read_i32::<LittleEndian>()?;
         let theta = cursor.read_u16::<LittleEndian>()?;
@@ -221,7 +219,7 @@ fn parse_lvx_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - z: int32 (mm)
 /// - reflectivity: uint8
 /// - tag: uint8
-fn parse_lvx_data2_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data2_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..96 {
         let x = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
         let y = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
@@ -257,7 +255,7 @@ fn parse_lvx_data2_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - phi: uint16 (0.01 degree)
 /// - reflectivity: uint8
 /// - tag: uint8
-fn parse_lvx_data3_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data3_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..96 {
         let depth = cursor.read_i32::<LittleEndian>()?;
         let theta = cursor.read_u16::<LittleEndian>()?;
@@ -307,7 +305,7 @@ fn parse_lvx_data3_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - z2: int32 (mm)
 /// - reflectivity2: uint8
 /// - tag2: uint8
-fn parse_lvx_data4_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data4_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..48 {
         for _ in 0..1 {
             let x = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
@@ -348,7 +346,7 @@ fn parse_lvx_data4_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - depth2: uint32 (mm)
 /// - reflectivity2: uint8
 /// - tag2: uint8
-fn parse_lvx_data5_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data5_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..48 {
         let theta = cursor.read_u16::<LittleEndian>()?;
         let phi = cursor.read_u16::<LittleEndian>()?;
@@ -396,12 +394,12 @@ fn parse_lvx_data5_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, writer: &
 /// - acc_x: float32 (g)
 /// - acc_y: float32 (g)
 /// - acc_z: float32 (g)
-fn parse_lvx_data6_list(cursor: &mut Cursor<&Vec<u8>>, _timestamp: u64, _writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx_data6_list(cursor: &mut Cursor<&Vec<u8>>, _timestamp: u64, _writer: &mut TimeSplitWriter) -> Result<(), Error> {
     cursor.seek(std::io::SeekFrom::Current(24))?; // skip 6 * 4 bytes
     Ok(())
 }
 
-fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     let mut private_header_block = [0u8; 5];
     reader.read_exact(&mut private_header_block)?;
     let device_count = private_header_block[4];
@@ -437,7 +435,7 @@ fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Box
     Ok(())
 }
 
-fn parse_lvx2_frame_body(buffer: &Vec<u8>, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx2_frame_body(buffer: &Vec<u8>, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     let mut cursor = Cursor::new(buffer);
     loop { // read each package
 
@@ -478,7 +476,7 @@ fn parse_lvx2_frame_body(buffer: &Vec<u8>, writer: &mut Box<dyn FrameWriter>) ->
 /// - z: int32 (mm)
 /// - reflectivity: uint8
 /// - tag: uint8
-fn parse_lvx2_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, length: u32, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx2_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, length: u32, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..length {
         let x = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
         let y = cursor.read_i32::<LittleEndian>()? as f32 / 1000.0;
@@ -510,7 +508,7 @@ fn parse_lvx2_data1_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, length: 
 /// - z: int16 (cm)
 /// - reflectivity: uint8
 /// - tag: uint8
-fn parse_lvx2_data2_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, length: u32, writer: &mut Box<dyn FrameWriter>) -> Result<(), Error> {
+fn parse_lvx2_data2_list(cursor: &mut Cursor<&Vec<u8>>, timestamp: u64, length: u32, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     for _ in 0..length {
         let x = cursor.read_i16::<LittleEndian>()? as f32 / 100.0;
         let y = cursor.read_i16::<LittleEndian>()? as f32 / 100.0;

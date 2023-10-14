@@ -1,27 +1,24 @@
 use std::path::Path;
 use hdf5::File;
 
-use crate::framesplitter::FrameSplitter;
 use crate::framewriter::FrameWriter;
 use crate::velopoint::VeloPoint;
 
 pub struct HdfWriter {
     file: File,
     dataset_index: u32,
-    frame_splitter: Box<dyn FrameSplitter>,
     buffer: Vec<VeloPoint>,
     enable_compression: bool,
 }
 
 impl HdfWriter {
-    pub fn create(filename: String, enable_compression: bool, splitter: Box<dyn FrameSplitter>) -> HdfWriter {
+    pub fn create(filename: String, enable_compression: bool) -> HdfWriter {
         let filename = format!("{}.h5", filename);
         let path = Path::new(&filename);
         let file = File::create(path).unwrap();
         HdfWriter {
             file,
             dataset_index: 0,
-            frame_splitter: splitter,
             buffer: Vec::new(),
             enable_compression,
         }
@@ -64,16 +61,10 @@ impl HdfWriter {
 
 impl FrameWriter for HdfWriter {
     fn write_row(&mut self, row: VeloPoint) {
-        if self.frame_splitter.read(&row) {
-            if self.buffer.len() > 0 {
-                self.write_to_file();
-                self.buffer.clear();
-            }
-        }
         self.buffer.push(row);
     }
 
-    fn finalize(&mut self) {
+    fn split_frame(&mut self) {
         if self.buffer.len() > 0 {
             self.write_to_file();
             self.buffer.clear();

@@ -1,10 +1,8 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use writer_common::csvwriter::CsvWriter;
-use writer_common::framesplitter::AzimuthSplitter;
 use writer_common::framewriter::FrameWriter;
-use writer_common::hdfwriter::HdfWriter;
-use writer_common::pcdwriter::PcdWriter;
+use writer_common::azimuthsplitwriter::AzimuthSplitWriter;
+use writer_common::framewriter::{CsvWriter, HdfWriter, PcdWriter};
 use writer_common::velopoint::VeloPoint;
 use std::fs::File;
 use std::f32::consts::PI;
@@ -23,12 +21,12 @@ pub fn run(args: Args) {
 
     let dir = format!("{}/", stem.to_str().unwrap());
 
-    let splitter = AzimuthSplitter::new();
-    let mut writer: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
-        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
+    let writer_internal: Box<dyn FrameWriter> = match args.out_type {
+        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
+        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string())),
     };
+    let mut writer = Box::new(AzimuthSplitWriter::new(writer_internal));
 
     let mut header_written = false;
 
@@ -121,7 +119,7 @@ fn print_help(opts: Options, command_prefix: &str) {
     print!("{}", opts.usage(format!("Usage: {} [options] <input>", command_prefix).as_str()));
 }
 
-fn write_header(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
+fn write_header(packet_body: &[u8], writer: &mut AzimuthSplitWriter) {
     let header = &packet_body[6..12];
     let laser_num = header[0] as u32;
     let tail = &packet_body[1052..1076];
@@ -136,7 +134,7 @@ fn write_header(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
     writer.write_attribute(laser_num, frequency, return_mode, "Hesai", "XT32");
 }
 
-fn parse_packet_body(packet_body: &[u8], writer: &mut Box<dyn FrameWriter>) {
+fn parse_packet_body(packet_body: &[u8], writer: &mut AzimuthSplitWriter) {
     // let pre_header = &packet_body[0..6];
     let header = &packet_body[6..12];
     let block_num = header[1] as u32;
@@ -181,7 +179,7 @@ fn calc_polar_coordinate(azimuth_deg: f32, v_angle_deg: f32, distance_m: f32) ->
     (x,y,z)
 }
 
-fn parse_block(packet_block: &[u8], block_timestamp_ns: u64, writer: &mut Box<dyn FrameWriter>) {
+fn parse_block(packet_block: &[u8], block_timestamp_ns: u64, writer: &mut AzimuthSplitWriter) {
     let azimuth = ((packet_block[1] as u32) << 8) + (packet_block[0] as u32);
     for channel in 0..32 as u8 {
         let channel_timestamp_ns = block_timestamp_ns + 1512 * channel as u64 + 280;
