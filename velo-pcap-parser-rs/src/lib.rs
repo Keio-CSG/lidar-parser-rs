@@ -1,6 +1,6 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use writer_common::{framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, framesplitter::AzimuthSplitter};
+use writer_common::{framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, framesplitter::AzimuthSplitter, pcdwriter::PcdWriter};
 use std::fs::File;
 use std::path::Path;
 use std::process::exit;
@@ -19,6 +19,7 @@ pub fn run(args: Args) {
     let mut writer: Box<dyn FrameWriter> = match args.out_type {
         OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
         OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
     };
 
     let time_start = Instant::now();
@@ -73,6 +74,7 @@ pub fn run(args: Args) {
 pub enum OutType {
     Csv,
     Hdf,
+    Pcd,
 }
 
 pub struct Args {
@@ -83,7 +85,7 @@ pub struct Args {
 
 pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
     let mut opts = Options::new();
-    opts.optopt("o", "output", "output type", "csv|hdf");
+    opts.optopt("o", "output", "output type", "csv|hdf|pcd");
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("c", "compression", "enable compression");
     let matches = opts.parse(args).unwrap();
@@ -101,6 +103,7 @@ pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
         match matches.opt_str("o").unwrap().as_str() {
             "csv" => OutType::Csv,
             "hdf" => OutType::Hdf,
+            "pcd" => OutType::Pcd,
             _ => {
                 print_help(opts, command_prefix);
                 exit(0);

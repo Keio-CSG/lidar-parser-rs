@@ -1,6 +1,6 @@
 use std::{path::Path, fs::File, io::{Read, BufReader, BufRead, Seek, Cursor}, time::Instant};
 
-use writer_common::{framesplitter::TimeSplitter, framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint};
+use writer_common::{framesplitter::TimeSplitter, framewriter::FrameWriter, csvwriter::CsvWriter, hdfwriter::HdfWriter, velopoint::VeloPoint, pcdwriter::PcdWriter};
 use anyhow::{Result, Error, ensure, anyhow, Ok};
 use byteorder::{LittleEndian, ReadBytesExt, ByteOrder};
 
@@ -17,6 +17,7 @@ pub fn run(args: Args) {
     let mut writer: Box<dyn FrameWriter> = match args.out_type {
         OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
         OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
     };
 
     let file = File::open(&args.input).unwrap();

@@ -4,6 +4,7 @@ use writer_common::csvwriter::CsvWriter;
 use writer_common::framesplitter::AzimuthSplitter;
 use writer_common::framewriter::FrameWriter;
 use writer_common::hdfwriter::HdfWriter;
+use writer_common::pcdwriter::PcdWriter;
 use writer_common::velopoint::VeloPoint;
 use std::fs::File;
 use std::f32::consts::PI;
@@ -26,6 +27,7 @@ pub fn run(args: Args) {
     let mut writer: Box<dyn FrameWriter> = match args.out_type {
         OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
         OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression, Box::new(splitter))),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string(), Box::new(splitter))),
     };
 
     let mut header_written = false;
@@ -72,7 +74,8 @@ pub fn run(args: Args) {
 
 pub enum OutType {
     Csv,
-    Hdf
+    Hdf,
+    Pcd,
 }
 
 pub struct Args {
@@ -83,7 +86,7 @@ pub struct Args {
 
 pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
     let mut opts = Options::new();
-    opts.optopt("o", "output", "output type", "csv|hdf");
+    opts.optopt("o", "output", "output type", "csv|hdf|pcd");
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("c", "compression", "enable compression");
     let matches = opts.parse(args).unwrap();
@@ -101,6 +104,7 @@ pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
         match matches.opt_str("o").unwrap().as_str() {
             "csv" => OutType::Csv,
             "hdf" => OutType::Hdf,
+            "pcd" => OutType::Pcd,
             _ => {
                 print_help(opts, command_prefix);
                 exit(0);

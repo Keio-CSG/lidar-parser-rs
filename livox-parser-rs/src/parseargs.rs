@@ -4,7 +4,8 @@ use getopts::Options;
 
 pub enum OutType {
     Csv,
-    Hdf
+    Hdf,
+    Pcd,
 }
 
 pub struct Args {
@@ -16,7 +17,7 @@ pub struct Args {
 
 pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
     let mut opts = Options::new();
-    opts.optopt("o", "output", "output type", "csv|hdf");
+    opts.optopt("o", "output", "output type", "csv|hdf|pcd");
     opts.optopt("t", "frame-time", "frame time in milliseconds", "100");
     opts.optflag("h", "help", "print this help menu");
     opts.optflag("c", "compression", "enable compression");
@@ -35,6 +36,7 @@ pub fn parse_args(command_prefix: &str, args: &Vec<String>) -> Args {
         match matches.opt_str("o").unwrap().as_str() {
             "csv" => OutType::Csv,
             "hdf" => OutType::Hdf,
+            "pcd" => OutType::Pcd,
             _ => {
                 print_help(opts, command_prefix);
                 exit(0);
