@@ -7,7 +7,7 @@ use anyhow::Error;
 use byteorder::{BigEndian, ByteOrder};
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use writer_common::framewriter::{FrameWriter, CsvWriter, HdfWriter};
+use writer_common::framewriter::{FrameWriter, CsvWriter, HdfWriter, PcdWriter};
 use writer_common::velopoint::VeloPoint;
 
 use crate::signalsplitwriter::SignalSplitWriter;
@@ -23,6 +23,7 @@ pub fn run(args: Args) {
     let writer_internal: Box<dyn FrameWriter> = match args.out_type {
         OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
         OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string())),
     };
     let mut writer = Box::new(SignalSplitWriter::new(writer_internal));
 
