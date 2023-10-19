@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git" }
+hdf5 = { git = "https://github.com/aldanor/hdf5-rust", branch = "master", default-features=false }
+hdf5-sys = { git = "https://github.com/aldanor/hdf5-rust", branch = "master", default-features=false, features = ["static","zlib"] }
 pcap-parser = "0.14.1"
 anyhow = "1.0.75"
 pcd-rs = "0.10.0"
