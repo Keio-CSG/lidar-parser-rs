@@ -407,14 +407,14 @@ fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Tim
     let mut device_info_block = [0u8; 63];
     reader.read_exact(&mut device_info_block)?;
     // only support device type 9 (Mid-360) and 10 (HAP)
-    let device_type = device_info_block[33];
-    ensure!(device_type == 9 || device_type == 10, "Unsupported device type: {}", device_type);
+    let device_type = device_info_block[37];
+    ensure!(device_type == 9 || device_type == 15, "Unsupported device type: {}", device_type);
 
     // write attrs
     let frequency = 1000.0 / frame_time_ms as f32;
     let model = match device_type {
         9 => "Mid-360",
-        10 => "HAP",
+        15 => "HAP", // 仕様上では10だが、ファイルを見ると15になっている
         _ => unreachable!(),
     };
     writer.write_attribute(0, frequency, 0, "Livox", model);
@@ -423,11 +423,11 @@ fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Tim
         if reader.fill_buf()?.is_empty() {
             break;
         }
-        let mut frame_header = [0u8; 32];
+        let mut frame_header = [0u8; 24];
         reader.read_exact(&mut frame_header)?;
         let current_offset = LittleEndian::read_u64(&frame_header[0..8]);
         let next_offset = LittleEndian::read_u64(&frame_header[8..16]);
-        let mut frame_body = vec![0u8; (next_offset - current_offset - 32) as usize];
+        let mut frame_body = vec![0u8; (next_offset - current_offset - 24) as usize];
         reader.read_exact(&mut frame_body)?;
 
         parse_lvx2_frame_body(&frame_body, writer)?;
@@ -438,7 +438,9 @@ fn parse_lvx2(reader: &mut BufReader<File>, frame_time_ms: u64, writer: &mut Tim
 fn parse_lvx2_frame_body(buffer: &Vec<u8>, writer: &mut TimeSplitWriter) -> Result<(), Error> {
     let mut cursor = Cursor::new(buffer);
     loop { // read each package
-
+        if cursor.position() == buffer.len() as u64 {
+            break;
+        }
         // skip package header
         // version (1 byte)
         // LiDAR ID (4 bytes)
@@ -467,6 +469,7 @@ fn parse_lvx2_frame_body(buffer: &Vec<u8>, writer: &mut TimeSplitWriter) -> Resu
             }
         }
     }
+    Ok(())
 }
 
 /// Parse a package of data type 1
