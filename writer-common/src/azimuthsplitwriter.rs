@@ -2,16 +2,21 @@ use crate::{framewriter::FrameWriter, velopoint::VeloPoint};
 
 pub struct AzimuthSplitWriter {
     pub previous_azimuth: u16,
+    pub min_offset: i32,
     pub writer: Box<dyn FrameWriter>,
 }
 
 impl AzimuthSplitWriter {
     pub fn new(writer: Box<dyn FrameWriter>) -> AzimuthSplitWriter {
-        AzimuthSplitWriter { previous_azimuth: 0, writer }
+        AzimuthSplitWriter { previous_azimuth: 0, min_offset: 0, writer }
+    }
+
+    pub fn new_with_min_offset(writer: Box<dyn FrameWriter>, min_offset: i32) -> AzimuthSplitWriter {
+        AzimuthSplitWriter { previous_azimuth: 0, min_offset, writer }
     }
 
     pub fn write_row(&mut self, row: VeloPoint) {
-        let is_new_frame = row.azimuth < self.previous_azimuth;
+        let is_new_frame = self.previous_azimuth as i32 - row.azimuth as i32 > self.min_offset;
         if is_new_frame {
             self.writer.split_frame();
         }
