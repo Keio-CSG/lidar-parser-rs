@@ -5,6 +5,7 @@ use pcd_rs::{DynRecord, ValueKind, DynWriter, WriterInit, Schema, Field};
 use crate::{velopoint::VeloPoint, framewriter::FrameWriter};
 
 pub struct PcdWriter {
+    base_dir: String,
     dir: String,
     file_prefix: String,
     file_index: u32,
@@ -12,9 +13,10 @@ pub struct PcdWriter {
 }
 
 impl PcdWriter {
-    pub fn create(dir: String, file_prefix: String) -> PcdWriter {
-        fs::create_dir(dir.to_string()).unwrap();
+    pub fn create(base_dir: String, dir: String, file_prefix: String) -> PcdWriter {
+        fs::create_dir(format!("{}/{}", base_dir, dir)).unwrap();
         PcdWriter { 
+            base_dir,
             dir, 
             file_prefix, 
             file_index: 0,
@@ -23,7 +25,7 @@ impl PcdWriter {
     }
 
     fn write_to_file(&mut self) {
-        let current_filename = format!("{0}{1}_{2:>04}.pcd", self.dir, self.file_prefix, self.file_index);
+        let current_filename = format!("{0}/{1}/{2}_{3:>04}.pcd", self.base_dir, self.dir, self.file_prefix, self.file_index);
         let schema = vec![
             ("x", ValueKind::F32, 1),
             ("y", ValueKind::F32, 1),

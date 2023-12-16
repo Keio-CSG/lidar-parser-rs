@@ -4,6 +4,7 @@ use std::io::{BufWriter, Write};
 use crate::{velopoint::VeloPoint, framewriter::FrameWriter};
 
 pub struct CsvWriter {
+    base_dir: String,
     dir: String,
     file_prefix: String,
     file_index: u32,
@@ -11,9 +12,10 @@ pub struct CsvWriter {
 }
 
 impl CsvWriter {
-    pub fn create(dir: String, file_prefix: String) -> CsvWriter {
-        fs::create_dir(dir.to_string()).unwrap();
+    pub fn create(base_dir: String, dir: String, file_prefix: String) -> CsvWriter {
+        fs::create_dir(format!("{}/{}", base_dir, dir)).unwrap();
         CsvWriter { 
+            base_dir,
             dir, 
             file_prefix, 
             file_index: 0,
@@ -22,7 +24,7 @@ impl CsvWriter {
     }
 
     fn write_to_file(&mut self) {
-        let current_filename = format!("{0}{1}_{2:>04}.csv", self.dir, self.file_prefix, self.file_index);
+        let current_filename = format!("{0}/{1}/{2}_{3:>04}.csv", self.base_dir, self.dir, self.file_prefix, self.file_index);
         let path = Path::new(&current_filename);
         let mut new_file = BufWriter::with_capacity(262144, OpenOptions::new()
             .create(true)

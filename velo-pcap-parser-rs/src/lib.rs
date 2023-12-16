@@ -11,14 +11,16 @@ use anyhow::{Result, Error, ensure, anyhow};
 // TODO: dual returnでreturnが1つしかない場合に対応する
 
 pub fn run(args: Args) {
-    let stem = Path::new(&args.input).file_stem().unwrap();
+    let input_file_path = Path::new(&args.input);
+    let stem = input_file_path.file_stem().unwrap();
+    let file_dir = input_file_path.parent().unwrap().to_str().unwrap().to_string();
 
-    let dir = format!("{}/", stem.to_str().unwrap());
+    let dir = stem.to_str().unwrap().to_string();
 
     let writer_internal: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
-        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string())),
+        OutType::Csv => Box::new(CsvWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
+        OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
     let mut writer = Box::new(AzimuthSplitWriter::new(writer_internal));
 

@@ -6,14 +6,16 @@ use writer_common::{framewriter::{FrameWriter, CsvWriter, HdfWriter, PcdWriter},
 use crate::{parseargs::{Args, OutType}, parser::{lvx::parse_lvx, lvx2::parse_lvx2, pcap::{parse_packet_body, write_header}}};
 
 pub fn run(args: Args) {
-    let stem = Path::new(&args.input).file_stem().unwrap();
+    let input_file_path = Path::new(&args.input);
+    let stem = input_file_path.file_stem().unwrap();
+    let file_dir = input_file_path.parent().unwrap().to_str().unwrap().to_string();
 
-    let dir = format!("{}/", stem.to_str().unwrap());
+    let dir = stem.to_str().unwrap().to_string();
 
     let writer_internal: Box<dyn FrameWriter> = match args.out_type {
-        OutType::Csv => Box::new(CsvWriter::create(dir, stem.to_str().unwrap().to_string())),
-        OutType::Hdf => Box::new(HdfWriter::create(stem.to_str().unwrap().to_string(), args.compression)),
-        OutType::Pcd => Box::new(PcdWriter::create(dir, stem.to_str().unwrap().to_string())),
+        OutType::Csv => Box::new(CsvWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
+        OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
+        OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
     let mut writer = TimeSplitWriter::new(args.frame_time_ms * 1000 * 1000, writer_internal);
 

@@ -12,8 +12,8 @@ pub struct HdfWriter {
 }
 
 impl HdfWriter {
-    pub fn create(filename: String, enable_compression: bool) -> HdfWriter {
-        let filename = format!("{}.h5", filename);
+    pub fn create(base_dir: String, filename: String, enable_compression: bool) -> HdfWriter {
+        let filename = format!("{0}/{1}.h5", base_dir, filename);
         let path = Path::new(&filename);
         let file = File::create(path).unwrap();
         HdfWriter {
