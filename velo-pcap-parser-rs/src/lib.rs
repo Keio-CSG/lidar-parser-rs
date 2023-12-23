@@ -13,7 +13,10 @@ use anyhow::{Result, Error, ensure, anyhow};
 pub fn run(args: Args) {
     let input_file_path = Path::new(&args.input);
     let stem = input_file_path.file_stem().unwrap();
-    let file_dir = input_file_path.parent().unwrap().to_str().unwrap().to_string();
+    let mut file_dir = input_file_path.parent().unwrap().to_str().unwrap().to_string();
+    if file_dir == "" {
+        file_dir = ".".to_string();
+    }
 
     let dir = stem.to_str().unwrap().to_string();
 
