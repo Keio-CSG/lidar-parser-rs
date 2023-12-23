@@ -7,6 +7,7 @@ use std::process::exit;
 use std::time::Instant;
 use getopts::Options;
 use anyhow::{Result, Error, ensure, anyhow};
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt};
 
 // TODO: dual returnでreturnが1つしかない場合に対応する
 
@@ -145,7 +146,7 @@ fn write_header(info: &PcapInfo, writer: &mut AzimuthSplitWriter) {
 
 fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     ensure!(packet_body.len() == 1206, "packet size is not 1206");
-    let timestamp = ((packet_body[1200] as u32) << 24) + ((packet_body[1201] as u32) << 16) + ((packet_body[1202] as u32) << 8) + packet_body[1203] as u32;
+    let timestamp = LittleEndian::read_u32(&packet_body[1200..1204]);
 
     let blocks = &packet_body[0..1200];
 
@@ -202,8 +203,8 @@ fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, t
                     _ => (x * 2) + (y / 16),
                 };
                 let data_point_index = channel;
-                let timing_offset = full_firing_cycle * data_block_index as f32 + single_firing * data_point_index as f32;
-                let precise_timestamp = timestamp as f32 + timing_offset;
+                let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
+                let precise_timestamp = timestamp as f64 + timing_offset;
                 
                 let channel_start = step_start_offset + (channel * 3) as usize;
                 let channel_end = step_start_offset + ((channel + 1) * 3) as usize;
@@ -211,7 +212,7 @@ fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, t
 
                 let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
                 let reflectivity = channel_data[2];
-                let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u32, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
+                let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
                 writer.write_row(point);
             }
         }
@@ -261,8 +262,8 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
                 _ => x,
             };
             let data_point_index = y / 2;
-            let timing_offset = full_firing_cycle * data_block_index as f32 + single_firing * data_point_index as f32;
-            let precise_timestamp = timestamp as f32 + timing_offset;
+            let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
+            let precise_timestamp = timestamp as f64 + timing_offset;
             
             let channel_start = (channel * 3) as usize;
             let channel_end = ((channel + 1) * 3) as usize;
@@ -270,7 +271,7 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
 
             let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
             let reflectivity = channel_data[2];
-            let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u32, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
+            let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
             writer.write_row(point);
         }
     }
@@ -279,7 +280,7 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
 
 
 const ROTATION_RESOLUTION: f32 = 0.01;
-fn build_velo_point(distance: f32, azimuth: u16, channel: u8, timestamp_ns: u32, intensity: u8, laser_angles: &[f32], distance_resolution: f32) -> VeloPoint {
+fn build_velo_point(distance: f32, azimuth: u16, channel: u8, timestamp_ns: u64, intensity: u8, laser_angles: &[f32], distance_resolution: f32) -> VeloPoint {
     let distance_m = distance as f32 * distance_resolution;
     let vertical_angle = laser_angles[channel as usize];
     let omega = vertical_angle.to_radians();
@@ -294,7 +295,7 @@ fn build_velo_point(distance: f32, azimuth: u16, channel: u8, timestamp_ns: u32,
         channel,
         azimuth,
         distance_m,
-        timestamp: timestamp_ns as u64,
+        timestamp: timestamp_ns,
         altitude: (vertical_angle * 100.0) as i16,
         x,
         y,

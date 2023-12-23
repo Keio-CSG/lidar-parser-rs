@@ -10,3 +10,4 @@ getopts = "0.2.21"
 pcap-parser = "0.14.1"
 anyhow = "1.0.75"
 writer-common = { path = "../writer-common" }
+byteorder = "1.4.3"
