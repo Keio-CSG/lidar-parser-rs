@@ -82,6 +82,6 @@ fn parse_block(packet_block: &[u8], block_timestamp_ns: u64, writer: &mut Azimut
             distance_m: distance as f32 * 4.0 / 1000.0,
             timestamp: channel_timestamp_ns, 
             altitude: (v_angle * 100) as i16, 
-            x, y, z })
+            x, y, z }, false)
     }
 }

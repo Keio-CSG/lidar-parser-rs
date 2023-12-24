@@ -154,10 +154,24 @@ fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut AzimuthSp
 
     match info.product {
         VeloProduct::Vlp16 => {
-            parse_vlp16(blocks, &info.return_mode, azimuth_per_scan, timestamp, writer)?;
+            match info.return_mode {
+                ReturnMode::Strongest | ReturnMode::Last => {
+                    parse_vlp16_single(blocks, azimuth_per_scan, timestamp, writer)?;
+                },
+                ReturnMode::Dual => {
+                    parse_vlp16_dual(blocks, azimuth_per_scan, timestamp, writer)?;
+                },
+            }
         },
         VeloProduct::Vlp32c => {
-            parse_vlp32c(blocks, &info.return_mode, azimuth_per_scan, timestamp, writer)?;
+            match info.return_mode {
+                ReturnMode::Strongest | ReturnMode::Last => {
+                    parse_vlp32c_single(blocks, azimuth_per_scan, timestamp, writer)?;
+                },
+                ReturnMode::Dual => {
+                    parse_vlp32c_dual(blocks, azimuth_per_scan, timestamp, writer)?;
+                },
+            }
         },
     }
 
@@ -168,7 +182,7 @@ const VLP16_LASER_ANGLES: [f32; 16] = [
     -15.0, 1.0, -13.0, 3.0, -11.0, 5.0, -9.0, 7.0, -7.0, 9.0, -5.0, 11.0, -3.0, 13.0, -1.0, 15.0,
 ];
 const VLP16_DISTANCE_RESOLUTION: f32 = 0.002;
-fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp16_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -198,10 +212,7 @@ fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, t
                 let single_firing = 2.304;
                 let x = i as u16;
                 let y = step * 16 + channel;
-                let data_block_index = match return_mode {
-                    ReturnMode::Dual => (x - (x % 2)) + (y / 16),
-                    _ => (x * 2) + (y / 16),
-                };
+                let data_block_index = (x * 2) + (y / 16);
                 let data_point_index = channel;
                 let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
                 let precise_timestamp = timestamp as f64 + timing_offset;
@@ -213,7 +224,66 @@ fn parse_vlp16(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, t
                 let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
                 let reflectivity = channel_data[2];
                 let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
-                writer.write_row(point);
+                writer.write_row(point, false);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_vlp16_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+    // blocks: 100 bytes * 12
+    //   flag(0xFFEE)  : 2 bytes
+    //   azimuth       : 2 bytes
+    //   channel data A: 3 bytes * 16
+    //   channel data B: 3 bytes * 16
+    //     distance    : 2 bytes
+    //     reflectivity: 1 byte
+    
+    for i in (0..12).step_by(2) {
+        let block_1 = &blocks[i*100..(i+1)*100];
+        let block_2 = &blocks[(i+1)*100..(i+2)*100];
+        let flag = ((block_1[0] as u16) << 8) + block_1[1] as u16;
+        ensure!(flag == 0xFFEE, "block flag is not 0xFFEE");
+        let block_azimuth = ((block_1[3] as u16) << 8) + block_1[2] as u16;
+
+        for step in 0..=1 {
+            let step_start_offset = (4 + step * 48) as usize;
+            let azimuth = block_azimuth + step * azimuth_per_scan;
+            let azimuth = if azimuth > 36000 { azimuth - 36000 } else { azimuth };
+
+            for channel in 0..16 {
+                let points = (&[block_1, block_2]).map(|block| {
+                    // calculate precise azimuth
+                    let precise_azimuth = azimuth + channel * azimuth_per_scan / 24;
+                    let precise_azimuth = if precise_azimuth > 36000 { precise_azimuth - 36000 } else { precise_azimuth };
+                    
+                    // calculate precise timestamp
+                    let full_firing_cycle = 55.296;
+                    let single_firing = 2.304;
+                    let x = i as u16;
+                    let y = step * 16 + channel;
+                    let data_block_index = (x - (x % 2)) + (y / 16);
+                    let data_point_index = channel;
+                    let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
+                    let precise_timestamp = timestamp as f64 + timing_offset;
+                    
+                    let channel_start = step_start_offset + (channel * 3) as usize;
+                    let channel_end = step_start_offset + ((channel + 1) * 3) as usize;
+                    let channel_data = &block[channel_start..channel_end];
+
+                    let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
+                    let reflectivity = channel_data[2];
+                    let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
+                    point
+                });
+                if points[0].distance_m == points[1].distance_m {
+                    // 同じ点の場合、後の点を無視する
+                    writer.write_row(points[0].clone(), false);
+                } else {
+                    writer.write_row(points[0].clone(), false);
+                    writer.write_row(points[1].clone(), true);
+                }
             }
         }
     }
@@ -233,7 +303,7 @@ const VLP32C_AZIMUTH_OFFSETS: [i32; 32] = [
     140, -140,  140, -420,  420, -140,  140, -140
 ];
 const VLP32C_DISTANCE_RESOLUTION: f32 = 0.004;
-fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp32c_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -257,10 +327,7 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
             let single_firing = 2.304;
             let x = i as u16;
             let y = channel;
-            let data_block_index = match return_mode {
-                ReturnMode::Dual => x / 2,
-                _ => x,
-            };
+            let data_block_index = x;
             let data_point_index = y / 2;
             let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
             let precise_timestamp = timestamp as f64 + timing_offset;
@@ -272,7 +339,59 @@ fn parse_vlp32c(blocks: &[u8], return_mode: &ReturnMode, azimuth_per_scan: u16, 
             let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
             let reflectivity = channel_data[2];
             let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
-            writer.write_row(point);
+            writer.write_row(point, false);
+        }
+    }
+    Ok(())
+}
+
+fn parse_vlp32c_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+    // blocks: 100 bytes * 12
+    //   flag(0xFFEE)  : 2 bytes
+    //   azimuth       : 2 bytes
+    //   channel data  : 3 bytes * 32
+    //     distance    : 2 bytes
+    //     reflectivity: 1 byte
+    
+    for i in (0..12).step_by(2) {
+        let block_1 = &blocks[i*100..(i+1)*100];
+        let block_2 = &blocks[(i+1)*100..(i+2)*100];
+        let flag = ((block_1[0] as u16) << 8) + block_1[1] as u16;
+        ensure!(flag == 0xFFEE, "block flag is not 0xFFEE");
+        let block_azimuth = ((block_1[3] as u16) << 8) + block_1[2] as u16;
+
+        for channel in 0..32 {
+            let points = (&[block_1, block_2]).map(|block| {
+                // calculate precise azimuth
+                let precise_azimuth = (block_azimuth + channel * azimuth_per_scan / 24) as i32 + VLP32C_AZIMUTH_OFFSETS[channel as usize];
+                let precise_azimuth = (precise_azimuth % 36000) as u16;
+                
+                // calculate precise timestamp
+                let full_firing_cycle = 55.296;
+                let single_firing = 2.304;
+                let x = i as u16;
+                let y = channel;
+                let data_block_index = x / 2;
+                let data_point_index = y / 2;
+                let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
+                let precise_timestamp = timestamp as f64 + timing_offset;
+                
+                let channel_start = (channel * 3) as usize;
+                let channel_end = ((channel + 1) * 3) as usize;
+                let channel_data = &block[channel_start..channel_end];
+                
+                let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
+                let reflectivity = channel_data[2];
+                let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
+                point
+            });
+            if points[0].distance_m == points[1].distance_m {
+                // 同じ点の場合、後の点を無視する
+                writer.write_row(points[0].clone(), false);
+            } else {
+                writer.write_row(points[0].clone(), false);
+                writer.write_row(points[1].clone(), true);
+            }
         }
     }
     Ok(())

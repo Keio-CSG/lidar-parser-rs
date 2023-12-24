@@ -15,7 +15,11 @@ impl AzimuthSplitWriter {
         AzimuthSplitWriter { previous_azimuth: 0, min_offset, writer }
     }
 
-    pub fn write_row(&mut self, row: VeloPoint) {
+    pub fn write_row(&mut self, row: VeloPoint, ignore_azimuth: bool) {
+        if ignore_azimuth {
+            self.writer.write_row(row);
+            return;
+        }
         let is_new_frame = self.previous_azimuth as i32 - row.azimuth as i32 > self.min_offset;
         if is_new_frame {
             self.writer.split_frame();
