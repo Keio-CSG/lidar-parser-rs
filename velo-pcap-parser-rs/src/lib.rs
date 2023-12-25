@@ -1,13 +1,13 @@
 use pcap_parser::*;
 use pcap_parser::traits::PcapReaderIterator;
-use writer_common::{framewriter::{FrameWriter, CsvWriter, HdfWriter, PcdWriter}, velopoint::VeloPoint, azimuthsplitwriter::AzimuthSplitWriter};
+use writer_common::{framewriter::{FrameWriter, CsvWriter, HdfWriter, PcdWriter}, velopoint::VeloPoint, valueslopesplitwriter::ValueSlopeSplitWriter};
 use std::fs::File;
 use std::path::Path;
 use std::process::exit;
 use std::time::Instant;
 use getopts::Options;
 use anyhow::{Result, Error, ensure, anyhow};
-use byteorder::{LittleEndian, ByteOrder, ReadBytesExt};
+use byteorder::{LittleEndian, ByteOrder};
 
 // TODO: dual returnでreturnが1つしかない場合に対応する
 
@@ -26,7 +26,7 @@ pub fn run(args: Args) {
         OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
         OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
-    let mut writer = Box::new(AzimuthSplitWriter::new(writer_internal));
+    let mut writer = Box::new(ValueSlopeSplitWriter::new(writer_internal));
 
     let time_start = Instant::now();
     let pcap_info = parse_packet_info(&args.input).unwrap();
@@ -126,7 +126,7 @@ fn print_help(opts: Options, command_prefix: &str) {
     print!("{}", opts.usage(format!("Usage: {} [options] <input>", command_prefix).as_str()));
 }
 
-fn write_header(info: &PcapInfo, writer: &mut AzimuthSplitWriter) {
+fn write_header(info: &PcapInfo, writer: &mut ValueSlopeSplitWriter) {
     let laser_num = match info.product {
         VeloProduct::Vlp16 => 16,
         VeloProduct::Vlp32c => 32,
@@ -144,7 +144,7 @@ fn write_header(info: &PcapInfo, writer: &mut AzimuthSplitWriter) {
     writer.write_attribute(laser_num, info.frequency, return_mode, manufacturer, model);
 }
 
-fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_packet_body(packet_body: &[u8], info: &PcapInfo, writer: &mut ValueSlopeSplitWriter) -> Result<(), Error> {
     ensure!(packet_body.len() == 1206, "packet size is not 1206");
     let timestamp = LittleEndian::read_u32(&packet_body[1200..1204]);
 
@@ -182,7 +182,7 @@ const VLP16_LASER_ANGLES: [f32; 16] = [
     -15.0, 1.0, -13.0, 3.0, -11.0, 5.0, -9.0, 7.0, -7.0, 9.0, -5.0, 11.0, -3.0, 13.0, -1.0, 15.0,
 ];
 const VLP16_DISTANCE_RESOLUTION: f32 = 0.002;
-fn parse_vlp16_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp16_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut ValueSlopeSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -224,14 +224,14 @@ fn parse_vlp16_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writ
                 let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
                 let reflectivity = channel_data[2];
                 let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP16_LASER_ANGLES, VLP16_DISTANCE_RESOLUTION);
-                writer.write_row(point, false);
+                writer.write_row(point, block_azimuth as i64);
             }
         }
     }
     Ok(())
 }
 
-fn parse_vlp16_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp16_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut ValueSlopeSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -279,10 +279,10 @@ fn parse_vlp16_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer
                 });
                 if points[0].distance_m == points[1].distance_m {
                     // 同じ点の場合、後の点を無視する
-                    writer.write_row(points[0].clone(), false);
+                    writer.write_row(points[0].clone(), block_azimuth as i64);
                 } else {
-                    writer.write_row(points[0].clone(), false);
-                    writer.write_row(points[1].clone(), true);
+                    writer.write_row(points[0].clone(), block_azimuth as i64);
+                    writer.write_row(points[1].clone(), block_azimuth as i64);
                 }
             }
         }
@@ -303,7 +303,7 @@ const VLP32C_AZIMUTH_OFFSETS: [i32; 32] = [
     140, -140,  140, -420,  420, -140,  140, -140
 ];
 const VLP32C_DISTANCE_RESOLUTION: f32 = 0.004;
-fn parse_vlp32c_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp32c_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut ValueSlopeSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -319,8 +319,13 @@ fn parse_vlp32c_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, wri
 
         for channel in 0..32 {
             // calculate precise azimuth
-            let precise_azimuth = (block_azimuth + channel * azimuth_per_scan / 24) as i32 + VLP32C_AZIMUTH_OFFSETS[channel as usize];
-            let precise_azimuth = (precise_azimuth % 36000) as u16;
+            let precise_azimuth = (block_azimuth + channel / 2 * azimuth_per_scan / 24) as i32 + VLP32C_AZIMUTH_OFFSETS[channel as usize];
+            let precise_azimuth = precise_azimuth % 36000;
+            let precise_azimuth = if precise_azimuth < 0 { 
+                (precise_azimuth + 36000) as u16 
+            } else { 
+                precise_azimuth as u16 
+            };
             
             // calculate precise timestamp
             let full_firing_cycle = 55.296;
@@ -332,20 +337,20 @@ fn parse_vlp32c_single(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, wri
             let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
             let precise_timestamp = timestamp as f64 + timing_offset;
             
-            let channel_start = (channel * 3) as usize;
-            let channel_end = ((channel + 1) * 3) as usize;
+            let channel_start = 4 + (channel * 3) as usize;
+            let channel_end = 4 + ((channel + 1) * 3) as usize;
             let channel_data = &block[channel_start..channel_end];
 
-            let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
+            let distance = LittleEndian::read_u16(&channel_data[0..2]);
             let reflectivity = channel_data[2];
             let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
-            writer.write_row(point, false);
+            writer.write_row(point, block_azimuth as i64);
         }
     }
     Ok(())
 }
 
-fn parse_vlp32c_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut AzimuthSplitWriter) -> Result<(), Error> {
+fn parse_vlp32c_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, writer: &mut ValueSlopeSplitWriter) -> Result<(), Error> {
     // blocks: 100 bytes * 12
     //   flag(0xFFEE)  : 2 bytes
     //   azimuth       : 2 bytes
@@ -356,15 +361,20 @@ fn parse_vlp32c_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, write
     for i in (0..12).step_by(2) {
         let block_1 = &blocks[i*100..(i+1)*100];
         let block_2 = &blocks[(i+1)*100..(i+2)*100];
-        let flag = ((block_1[0] as u16) << 8) + block_1[1] as u16;
+        let flag = ((block_1[0] as u16) << 8) + block_2[1] as u16;
         ensure!(flag == 0xFFEE, "block flag is not 0xFFEE");
-        let block_azimuth = ((block_1[3] as u16) << 8) + block_1[2] as u16;
+        let block_azimuth = LittleEndian::read_u16(&block_1[2..4]);
 
         for channel in 0..32 {
             let points = (&[block_1, block_2]).map(|block| {
                 // calculate precise azimuth
-                let precise_azimuth = (block_azimuth + channel * azimuth_per_scan / 24) as i32 + VLP32C_AZIMUTH_OFFSETS[channel as usize];
-                let precise_azimuth = (precise_azimuth % 36000) as u16;
+                let precise_azimuth = (block_azimuth + channel / 2 * azimuth_per_scan / 24) as i32 + VLP32C_AZIMUTH_OFFSETS[channel as usize];
+                let precise_azimuth = precise_azimuth % 36000;
+                let precise_azimuth = if precise_azimuth < 0 { 
+                    (precise_azimuth + 36000) as u16 
+                } else { 
+                    precise_azimuth as u16 
+                };
                 
                 // calculate precise timestamp
                 let full_firing_cycle = 55.296;
@@ -376,21 +386,21 @@ fn parse_vlp32c_dual(blocks: &[u8], azimuth_per_scan: u16, timestamp: u32, write
                 let timing_offset = full_firing_cycle * data_block_index as f64 + single_firing * data_point_index as f64;
                 let precise_timestamp = timestamp as f64 + timing_offset;
                 
-                let channel_start = (channel * 3) as usize;
-                let channel_end = ((channel + 1) * 3) as usize;
+                let channel_start = 4 + (channel * 3) as usize;
+                let channel_end = 4 + ((channel + 1) * 3) as usize;
                 let channel_data = &block[channel_start..channel_end];
                 
-                let distance = ((channel_data[1] as u16) << 8) + channel_data[0] as u16;
+                let distance = LittleEndian::read_u16(&channel_data[0..2]);
                 let reflectivity = channel_data[2];
                 let point = build_velo_point(distance as f32, precise_azimuth, channel as u8, (precise_timestamp * 1000.0) as u64, reflectivity, &VLP32C_LASER_ANGLES, VLP32C_DISTANCE_RESOLUTION);
                 point
             });
             if points[0].distance_m == points[1].distance_m {
                 // 同じ点の場合、後の点を無視する
-                writer.write_row(points[0].clone(), false);
+                writer.write_row(points[0].clone(), block_azimuth as i64);
             } else {
-                writer.write_row(points[0].clone(), false);
-                writer.write_row(points[1].clone(), true);
+                writer.write_row(points[0].clone(), block_azimuth as i64);
+                writer.write_row(points[1].clone(), block_azimuth as i64);
             }
         }
     }
@@ -449,7 +459,8 @@ fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
     let file = File::open(filename).unwrap();
     let mut reader = LegacyPcapReader::new(65536, file).expect("LegacyPcapReader");
 
-    let mut packet_body: Option<Vec<u8>> = None;
+    let mut packet_first_body: Option<Vec<u8>> = None;
+    let mut packet_second_body: Option<Vec<u8>> = None;
     let mut num_frames: u16 = 1;
     let mut prev_azimuth: u16 = 0;
 
@@ -473,8 +484,11 @@ fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
                             num_frames += 1;
                         }
                         prev_azimuth = first_block_azimuth;
-                        if packet_body.is_none() {
-                            packet_body = Some(udp_data.to_vec());
+                        if packet_first_body.is_none() {
+                            packet_first_body = Some(udp_data.to_vec());
+                        }
+                        else if packet_second_body.is_none() {
+                            packet_second_body = Some(udp_data.to_vec());
                         }
                     }
                     _ => ()
@@ -489,14 +503,18 @@ fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
         }
     }
 
-    let packet_body = match packet_body {
+    let packet_first_body = match packet_first_body {
+        Some(body) => body,
+        None => return Err(anyhow!("no packet found")),
+    };
+    let packet_second_body = match packet_second_body {
         Some(body) => body,
         None => return Err(anyhow!("no packet found")),
     };
 
-    ensure!(packet_body.len() == 1206, "packet size is not 1206");
-    let factory_return_mode = packet_body[1204];
-    let factory_product_id = packet_body[1205];
+    ensure!(packet_first_body.len() == 1206, "packet size is not 1206");
+    let factory_return_mode = packet_first_body[1204];
+    let factory_product_id = packet_first_body[1205];
 
     let return_mode = match factory_return_mode {
         0x37 => ReturnMode::Strongest,
@@ -512,18 +530,15 @@ fn parse_packet_info(filename: &str) -> Result<PcapInfo, Error> {
     };
 
     // predict motor speed
-    let first_block_azimuth = ((packet_body[3] as u16) << 8) + packet_body[2] as u16;
-    let last_block_azimuth = ((packet_body[1103] as u16) << 8) + packet_body[1102] as u16;
-    let azimuth_diff = if first_block_azimuth > last_block_azimuth {
-        36000 + last_block_azimuth - first_block_azimuth
+    let first_azimuth = LittleEndian::read_u16(&packet_first_body[2..4]);
+    let second_azimuth = LittleEndian::read_u16(&packet_second_body[2..4]);
+    let azimuth_diff = if first_azimuth > second_azimuth {
+        36000 + second_azimuth - first_azimuth
     } else {
-        last_block_azimuth - first_block_azimuth
+        second_azimuth - first_azimuth
     };
-    let elapsed_time_us = match return_mode {
-        ReturnMode::Dual => 55.296 * 11.0,
-        _ => 55.296 * 22.0,
-    };
-    let frequency = azimuth_diff as f32 / elapsed_time_us * 1000.0 / 36.0;
+    let elapsed_time_us = LittleEndian::read_u32(&packet_second_body[1200..1204]) - LittleEndian::read_u32(&packet_first_body[1200..1204]);
+    let frequency = azimuth_diff as f32 / elapsed_time_us as f32 * 1000.0 / 36.0;
 
     Ok(PcapInfo {
         return_mode,
