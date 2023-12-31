@@ -25,7 +25,7 @@ pub fn run(args: Args) {
         OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
         OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
-    let mut writer = Box::new(AzimuthSplitWriter::new_with_min_offset(writer_internal, 60*100));
+    let mut writer = Box::new(AzimuthSplitWriter::new_with_min_offset(writer_internal, 60*100, 0));
 
     let mut header_written = false;
 

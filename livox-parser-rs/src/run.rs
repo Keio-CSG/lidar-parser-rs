@@ -20,7 +20,7 @@ pub fn run(args: Args) {
         OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
         OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
-    let mut writer = TimeSplitWriter::new(args.frame_time_ms * 1000 * 1000, writer_internal);
+    let mut writer = TimeSplitWriter::new(writer_internal, args.frame_time_ms * 1000 * 1000, 0);
 
     let file_path = PathBuf::from(&args.input);
     let extension = file_path.extension().unwrap().to_str().unwrap();

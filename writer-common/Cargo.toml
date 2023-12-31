@@ -11,3 +11,4 @@ hdf5-sys = { git = "https://github.com/aldanor/hdf5-rust", branch = "master", de
 pcap-parser = "0.14.1"
 anyhow = "1.0.75"
 pcd-rs = "0.10.0"
+indicatif = "0.17.7"

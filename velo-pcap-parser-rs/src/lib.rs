@@ -21,18 +21,14 @@ pub fn run(args: Args) {
 
     let dir = stem.to_str().unwrap().to_string();
 
+    let pcap_info = parse_packet_info(&args.input).unwrap();
+
     let writer_internal: Box<dyn FrameWriter> = match args.out_type {
         OutType::Csv => Box::new(CsvWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
         OutType::Hdf => Box::new(HdfWriter::create(file_dir, stem.to_str().unwrap().to_string(), args.compression)),
         OutType::Pcd => Box::new(PcdWriter::create(file_dir, dir, stem.to_str().unwrap().to_string())),
     };
-    let mut writer = Box::new(ValueSlopeSplitWriter::new(writer_internal));
-
-    let time_start = Instant::now();
-    let pcap_info = parse_packet_info(&args.input).unwrap();
-    let end = time_start.elapsed();
-    println!("{}us", end.as_micros());
-    println!("{:?}", pcap_info);
+    let mut writer = Box::new(ValueSlopeSplitWriter::new(writer_internal, pcap_info.num_frames as u64));
 
     write_header(&pcap_info, &mut writer);
 

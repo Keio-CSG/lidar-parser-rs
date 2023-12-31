@@ -3,10 +3,12 @@ use crate::velopoint::VeloPoint;
 mod csvwriter;
 mod hdfwriter;
 mod pcdwriter;
+mod progressbarext;
 
 pub use csvwriter::*;
 pub use hdfwriter::*;
 pub use pcdwriter::*;
+pub use progressbarext::ProgressBarExt;
 
 pub trait FrameWriter {
     fn write_row(&mut self, row: VeloPoint);
