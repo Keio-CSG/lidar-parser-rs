@@ -76,7 +76,10 @@ fn read_pcap_file(path: &str, frame_time_ms: u64, mut writer: &mut TimeSplitWrit
                 }
                 reader.consume(offset);
             },
-            Err(PcapError::Eof) => break,
+            Err(PcapError::Eof) => {
+                writer.finalize();
+                break;
+            },
             Err(PcapError::Incomplete) => {
                 reader.refill().unwrap();
             },
@@ -118,6 +121,7 @@ fn read_lvx_file(path: &str, frame_time_ms: u64, mut writer: &mut TimeSplitWrite
             std::process::exit(1);
         }
     }
+    writer.finalize();
     let duration = time_start.elapsed();
 
     println!("file have been processed in {:?}", duration);
